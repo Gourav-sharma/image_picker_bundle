@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'dart:async';
 
 import 'package:flutter/services.dart';
 import 'package:image_picker_bundle/image_picker_bundle.dart';
+import 'package:video_player/video_player.dart';
 
 
 void main() {
@@ -66,40 +69,107 @@ class _MyAppState extends State<MyApp> {
 
 class _PickerDemoState extends State<PickerDemo> {
   Uint8List? _image;
+  List<Uint8List>? _images;
+  String? _video;
+  VideoPlayerController? _videoController;
 
-  Future<void> _pickGallery() async {
-    final img = await FlutterImagePicker.pickFromGallery();
-    setState(() => _image = img);
+  Future<void> _pickSingle() async {
+    final image = await FlutterImagePicker.pickFromGallery();
+    setState(() => _image = image);
   }
 
-  Future<void> _pickCamera() async {
-    final img = await FlutterImagePicker.pickFromCamera();
-    setState(() => _image = img);
+  Future<void> _pickMulti() async {
+    final images = await FlutterImagePicker.pickMultiFromGallery();
+    setState(() => _images = images);
+  }
+
+  Future<void> _pickCameraImage() async {
+    final image = await FlutterImagePicker.pickFromCamera();
+    setState(() => _image = image);
+  }
+
+  Future<void> _pickVideoGallery() async {
+    final video = await FlutterImagePicker.pickVideoFromGallery();
+    await _playVideo(video);
+  }
+
+  Future<void> _recordVideo() async {
+    final video = await FlutterImagePicker.recordVideo();
+    await _playVideo(video);
+  }
+
+  Future<void> _playVideo(String? video) async {
+    if (video != null) {
+      _video = video;
+      final uri = Uri.parse(_video!);
+      _videoController = VideoPlayerController.contentUri(uri);
+      await _videoController!.initialize();
+      setState(() {});
+      _videoController!.play();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("Flutter Image Picker Plugin")),
+      appBar: AppBar(title: const Text("Flutter Image Picker Plugin")),
       body: Center(
-        child: _image == null
-            ? Text("No image selected")
-            : Image.memory(_image!),
+        child: _image == null && _images == null && _video == null
+            ? const Text("No media selected")
+            : _images != null
+            ? ListView.builder(
+          itemCount: _images!.length,
+          itemBuilder: (context, index) =>
+              Image.memory(_images![index]),
+        )
+            : _video != null &&
+            _videoController != null &&
+            _videoController!.value.isInitialized
+            ? AspectRatio(
+          aspectRatio: _videoController!.value.aspectRatio,
+          child: VideoPlayer(_videoController!),
+        )
+            : _image != null
+            ? Image.memory(_image!)
+            : const Text("No media selected"),
       ),
-      floatingActionButton: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
+      floatingActionButton: Wrap(
+        spacing: 10,
+        direction: Axis.horizontal,
         children: [
           FloatingActionButton(
-            onPressed: _pickGallery,
-            child: Icon(Icons.photo),
+            heroTag: "gallery",
+            onPressed: _pickSingle,
+            child: const Icon(Icons.photo),
           ),
-          SizedBox(height: 10),
           FloatingActionButton(
-            onPressed: _pickCamera,
-            child: Icon(Icons.camera_alt),
+            heroTag: "multi",
+            onPressed: _pickMulti,
+            child: const Icon(Icons.collections),
+          ),
+          FloatingActionButton(
+            heroTag: "cameraImg",
+            onPressed: _pickCameraImage,
+            child: const Icon(Icons.camera_alt),
+          ),
+          FloatingActionButton(
+            heroTag: "galleryVideo",
+            onPressed: _pickVideoGallery,
+            child: const Icon(Icons.video_library),
+          ),
+          FloatingActionButton(
+            heroTag: "recordVideo",
+            onPressed: _recordVideo,
+            child: const Icon(Icons.videocam),
           ),
         ],
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _videoController?.dispose();
+    super.dispose();
   }
 }

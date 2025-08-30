@@ -16,13 +16,16 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 
 /** ImagePickerBundlePlugin */
-class ImagePickerBundlePlugin: FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware {
+class ImagePickerBundlePlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware {
   private lateinit var channel: MethodChannel
   private var activity: Activity? = null
   private var resultPending: MethodChannel.Result? = null
 
-  private val REQUEST_GALLERY = 1001
-  private val REQUEST_CAMERA = 1002
+  private val REQUEST_GALLERY_SINGLE = 1001
+  private val REQUEST_CAMERA_IMAGE = 1002
+  private val REQUEST_GALLERY_MULTI = 1003
+  private val REQUEST_GALLERY_VIDEO = 1004
+  private val REQUEST_CAMERA_VIDEO = 1005
 
   private var cameraImageUri: Uri? = null
 
@@ -36,7 +39,21 @@ class ImagePickerBundlePlugin: FlutterPlugin, MethodChannel.MethodCallHandler, A
     when (call.method) {
       "pickFromGallery" -> {
         val intent = Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
-        activity?.startActivityForResult(intent, REQUEST_GALLERY)
+        activity?.startActivityForResult(intent, REQUEST_GALLERY_SINGLE)
+      }
+      "pickMultiFromGallery" -> {
+        val intent = Intent(Intent.ACTION_GET_CONTENT)
+        intent.type = "image/*"
+        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        activity?.startActivityForResult(Intent.createChooser(intent, "Select Pictures"), REQUEST_GALLERY_MULTI)
+      }
+      "pickVideoFromGallery" -> {
+        val intent = Intent(Intent.ACTION_PICK, MediaStore.Video.Media.EXTERNAL_CONTENT_URI)
+        activity?.startActivityForResult(intent, REQUEST_GALLERY_VIDEO)
+      }
+      "recordVideo" -> {
+        val intent = Intent(MediaStore.ACTION_VIDEO_CAPTURE)
+        activity?.startActivityForResult(intent, REQUEST_CAMERA_VIDEO)
       }
       "pickFromCamera" -> {
         val imageFile = createImageFile()
@@ -48,7 +65,7 @@ class ImagePickerBundlePlugin: FlutterPlugin, MethodChannel.MethodCallHandler, A
         val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
         intent.putExtra(MediaStore.EXTRA_OUTPUT, cameraImageUri)
         intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-        activity?.startActivityForResult(intent, REQUEST_CAMERA)
+        activity?.startActivityForResult(intent, REQUEST_CAMERA_IMAGE)
       }
       else -> result.notImplemented()
     }
@@ -59,7 +76,7 @@ class ImagePickerBundlePlugin: FlutterPlugin, MethodChannel.MethodCallHandler, A
     binding.addActivityResultListener { requestCode, resultCode, data ->
       if (resultCode == Activity.RESULT_OK) {
         when (requestCode) {
-          REQUEST_GALLERY -> {
+          REQUEST_GALLERY_SINGLE -> {
             val uri = data?.data
             if (uri != null) {
               val bitmap = MediaStore.Images.Media.getBitmap(activity!!.contentResolver, uri)
@@ -69,7 +86,37 @@ class ImagePickerBundlePlugin: FlutterPlugin, MethodChannel.MethodCallHandler, A
             }
             true
           }
-          REQUEST_CAMERA -> {
+          REQUEST_GALLERY_MULTI -> {
+            val clipData = data?.clipData
+            val images = ArrayList<ByteArray>()
+            if (clipData != null) {
+              for (i in 0 until clipData.itemCount) {
+                val uri = clipData.getItemAt(i).uri
+                val bitmap = MediaStore.Images.Media.getBitmap(activity!!.contentResolver, uri)
+                val stream = ByteArrayOutputStream()
+                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 100, stream)
+                images.add(stream.toByteArray())
+              }
+              resultPending?.success(images)
+            } else {
+              val uri = data?.data
+              if (uri != null) {
+                val bitmap = MediaStore.Images.Media.getBitmap(activity!!.contentResolver, uri)
+                val stream = ByteArrayOutputStream()
+                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 100, stream)
+                resultPending?.success(listOf(stream.toByteArray()))
+              } else {
+                resultPending?.success(null)
+              }
+            }
+            true
+          }
+          REQUEST_GALLERY_VIDEO, REQUEST_CAMERA_VIDEO -> {
+            val uri = data?.data
+            resultPending?.success(uri?.toString())
+            true
+          }
+          REQUEST_CAMERA_IMAGE -> {
             if (cameraImageUri != null) {
               val stream = activity!!.contentResolver.openInputStream(cameraImageUri!!)
               val bitmap = BitmapFactory.decodeStream(stream)
