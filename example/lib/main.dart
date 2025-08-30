@@ -79,7 +79,7 @@ class _PickerDemoState extends State<PickerDemo> {
   }
 
   Future<void> _pickMulti() async {
-    final images = await FlutterImagePicker.pickMultiFromGallery();
+    final images = await FlutterImagePicker.pickMultiFromGallery(limit: 8);
     setState(() => _images = images);
   }
 
@@ -88,10 +88,7 @@ class _PickerDemoState extends State<PickerDemo> {
     setState(() => _image = image);
   }
 
-  Future<void> _pickVideoGallery() async {
-    final video = await FlutterImagePicker.pickVideoFromGallery();
-    await _playVideo(video);
-  }
+
 
   Future<void> _recordVideo() async {
     final video = await FlutterImagePicker.recordVideo();
@@ -152,11 +149,7 @@ class _PickerDemoState extends State<PickerDemo> {
             onPressed: _pickCameraImage,
             child: const Icon(Icons.camera_alt),
           ),
-          FloatingActionButton(
-            heroTag: "galleryVideo",
-            onPressed: _pickVideoGallery,
-            child: const Icon(Icons.video_library),
-          ),
+
           FloatingActionButton(
             heroTag: "recordVideo",
             onPressed: _recordVideo,

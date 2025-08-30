@@ -14,6 +14,9 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
 import java.io.File
+import android.os.Build
+import android.graphics.Bitmap
+
 
 /** ImagePickerBundlePlugin */
 class ImagePickerBundlePlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware {
@@ -26,6 +29,8 @@ class ImagePickerBundlePlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
   private val REQUEST_GALLERY_MULTI = 1003
   private val REQUEST_GALLERY_VIDEO = 1004
   private val REQUEST_CAMERA_VIDEO = 1005
+
+  private var multiImageLimit: Int = 5
 
   private var cameraImageUri: Uri? = null
 
@@ -42,10 +47,18 @@ class ImagePickerBundlePlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
         activity?.startActivityForResult(intent, REQUEST_GALLERY_SINGLE)
       }
       "pickMultiFromGallery" -> {
-        val intent = Intent(Intent.ACTION_GET_CONTENT)
-        intent.type = "image/*"
-        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-        activity?.startActivityForResult(Intent.createChooser(intent, "Select Pictures"), REQUEST_GALLERY_MULTI)
+        multiImageLimit = (call.argument<Int>("limit") ?: 5)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+          val intent = Intent(MediaStore.ACTION_PICK_IMAGES)
+          intent.putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, multiImageLimit)
+          activity?.startActivityForResult(intent, REQUEST_GALLERY_MULTI)
+        } else {
+          val intent = Intent(Intent.ACTION_GET_CONTENT)
+          intent.type = "image/*"
+          intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+          activity?.startActivityForResult(intent, REQUEST_GALLERY_MULTI)
+        }
       }
       "pickVideoFromGallery" -> {
         val intent = Intent(Intent.ACTION_PICK, MediaStore.Video.Media.EXTERNAL_CONTENT_URI)
@@ -89,12 +102,19 @@ class ImagePickerBundlePlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
           REQUEST_GALLERY_MULTI -> {
             val clipData = data?.clipData
             val images = ArrayList<ByteArray>()
+
             if (clipData != null) {
-              for (i in 0 until clipData.itemCount) {
+              val count = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                clipData.itemCount // system already enforces limit
+              } else {
+                minOf(clipData.itemCount, multiImageLimit) // trim manually
+              }
+
+              for (i in 0 until count) {
                 val uri = clipData.getItemAt(i).uri
                 val bitmap = MediaStore.Images.Media.getBitmap(activity!!.contentResolver, uri)
                 val stream = ByteArrayOutputStream()
-                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 100, stream)
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream)
                 images.add(stream.toByteArray())
               }
               resultPending?.success(images)
@@ -103,7 +123,7 @@ class ImagePickerBundlePlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
               if (uri != null) {
                 val bitmap = MediaStore.Images.Media.getBitmap(activity!!.contentResolver, uri)
                 val stream = ByteArrayOutputStream()
-                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 100, stream)
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream)
                 resultPending?.success(listOf(stream.toByteArray()))
               } else {
                 resultPending?.success(null)

@@ -3,32 +3,30 @@ import 'package:image_picker_bundle/image_picker_bundle.dart';
 class FlutterImagePicker {
   static const MethodChannel _channel = MethodChannel('image_picker_bundle');
 
-  /// Pick a single image from gallery
+  /// Pick single image from gallery
   static Future<Uint8List?> pickFromGallery() async {
-    final result = await _channel.invokeMethod('pickFromGallery');
-    return result != null ? Uint8List.fromList(List<int>.from(result)) : null;
+    final Uint8List? imageBytes =
+    await _channel.invokeMethod('pickFromGallery');
+    return imageBytes;
   }
 
-  /// Pick multiple images from gallery
-  static Future<List<Uint8List>?> pickMultiFromGallery() async {
-    final result = await _channel.invokeMethod('pickMultiFromGallery');
-    if (result == null) return null;
-    return (result as List).map((e) => Uint8List.fromList(List<int>.from(e))).toList();
-  }
-
-  /// Pick an image from camera
+  /// Pick single image from camera
   static Future<Uint8List?> pickFromCamera() async {
-    final result = await _channel.invokeMethod('pickFromCamera');
-    return result != null ? Uint8List.fromList(List<int>.from(result)) : null;
+    final Uint8List? imageBytes =
+    await _channel.invokeMethod('pickFromCamera');
+    return imageBytes;
   }
 
-  /// Pick a video from gallery
-  static Future<String?> pickVideoFromGallery() async {
-    return await _channel.invokeMethod('pickVideoFromGallery');
+  /// Pick multiple images with limit
+  static Future<List<Uint8List>?> pickMultiFromGallery({int limit = 5}) async {
+    final List<dynamic>? result =
+    await _channel.invokeMethod('pickMultiFromGallery', {"limit": limit});
+    return result?.map((e) => e as Uint8List).toList();
   }
 
-  /// Record a video from camera
+  /// Record video (returns file path)
   static Future<String?> recordVideo() async {
-    return await _channel.invokeMethod('recordVideo');
+    final String? path = await _channel.invokeMethod('recordVideo');
+    return path;
   }
 }
