@@ -95,6 +95,11 @@ class _PickerDemoState extends State<PickerDemo> {
     await _playVideo(video);
   }
 
+  Future<void> _pickVideoFromGallery() async {
+    final video = await FlutterImagePicker.pickVideoFromGallery();
+    await _playVideo(video);
+  }
+
   Future<void> _playVideo(String? video) async {
     if (video != null) {
       _video = video;
@@ -153,6 +158,12 @@ class _PickerDemoState extends State<PickerDemo> {
           FloatingActionButton(
             heroTag: "recordVideo",
             onPressed: _recordVideo,
+            child: const Icon(Icons.videocam),
+          ),
+
+          FloatingActionButton(
+            heroTag: "pickVideoFromGallery",
+            onPressed: _pickVideoFromGallery,
             child: const Icon(Icons.videocam),
           ),
         ],

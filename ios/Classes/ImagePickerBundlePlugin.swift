@@ -30,6 +30,8 @@ public class ImagePickerBundlePlugin: NSObject, FlutterPlugin, UIImagePickerCont
             pickMultiFromGallery()
         case "recordVideo":
             recordVideo()
+        case "pickVideoFromGallery":
+             pickVideoFromGallery()
         default:
             result(FlutterMethodNotImplemented)
         }
@@ -84,13 +86,25 @@ public class ImagePickerBundlePlugin: NSObject, FlutterPlugin, UIImagePickerCont
         let picker = UIImagePickerController()
         picker.sourceType = .camera
         picker.mediaTypes = ["public.movie"]
-        picker.videoQuality = .typeMedium
+        picker.videoQuality = .typeHigh
         picker.delegate = self
         picker.isEditing = true
         picker.allowsEditing = true
         viewController?.present(picker, animated: true, completion: nil)
     }
-    
+    // MARK: - Pick Video from Gallery
+    private func pickVideoFromGallery() {
+        let picker = UIImagePickerController()
+        picker.sourceType = .photoLibrary
+        picker.mediaTypes = ["public.movie"] // only videos
+        picker.delegate = self
+        picker.videoQuality = .typeHigh
+        picker.delegate = self
+        picker.isEditing = true
+        picker.allowsEditing = true
+        viewController?.present(picker, animated: true, completion: nil)
+    }
+
     // MARK: - UIImagePickerController Delegate
     public func imagePickerController(_ picker: UIImagePickerController,
                                       didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {

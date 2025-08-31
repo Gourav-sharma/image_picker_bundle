@@ -29,4 +29,10 @@ class FlutterImagePicker {
     final String? path = await _channel.invokeMethod('recordVideo');
     return path;
   }
+
+  /// Record video (returns file path)
+  static Future<String?> pickVideoFromGallery() async {
+    final String? path = await _channel.invokeMethod('pickVideoFromGallery');
+    return path;
+  }
 }
