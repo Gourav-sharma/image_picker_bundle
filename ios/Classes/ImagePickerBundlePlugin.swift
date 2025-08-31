@@ -1,19 +1,146 @@
 import Flutter
 import UIKit
+import PhotosUI
 
-public class ImagePickerBundlePlugin: NSObject, FlutterPlugin {
-  public static func register(with registrar: FlutterPluginRegistrar) {
-    let channel = FlutterMethodChannel(name: "image_picker_bundle", binaryMessenger: registrar.messenger())
-    let instance = ImagePickerBundlePlugin()
-    registrar.addMethodCallDelegate(instance, channel: channel)
-  }
-
-  public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-    switch call.method {
-    case "getPlatformVersion":
-      result("iOS " + UIDevice.current.systemVersion)
-    default:
-      result(FlutterMethodNotImplemented)
+public class ImagePickerBundlePlugin: NSObject, FlutterPlugin, UIImagePickerControllerDelegate, UINavigationControllerDelegate, PHPickerViewControllerDelegate {
+    
+    var flutterResult: FlutterResult?
+    var viewController: UIViewController?
+    var multiImageLimit: Int = 1
+    
+    public static func register(with registrar: FlutterPluginRegistrar) {
+        let channel = FlutterMethodChannel(name: "image_picker_bundle", binaryMessenger: registrar.messenger())
+        let instance = ImagePickerBundlePlugin()
+        registrar.addMethodCallDelegate(instance, channel: channel)
+        instance.viewController = UIApplication.shared.delegate?.window??.rootViewController
     }
-  }
+    
+    public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        flutterResult = result
+        switch call.method {
+        case "pickFromGallery":
+            pickSingleFromGallery()
+        case "pickFromCamera":
+            pickFromCamera()
+        case "pickMultiFromGallery":
+            if let args = call.arguments as? [String: Any],
+               let limit = args["limit"] as? Int {
+                multiImageLimit = limit
+            }
+            pickMultiFromGallery()
+        case "recordVideo":
+            recordVideo()
+        default:
+            result(FlutterMethodNotImplemented)
+        }
+    }
+    
+    // MARK: - Single Image from Gallery
+    private func pickSingleFromGallery() {
+        let picker = UIImagePickerController()
+        picker.sourceType = .photoLibrary
+        picker.delegate = self
+        picker.isEditing = true
+        picker.allowsEditing = true
+
+        viewController?.present(picker, animated: true, completion: nil)
+    }
+    
+    // MARK: - Camera
+    private func pickFromCamera() {
+        guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+            flutterResult?(nil)
+            return
+        }
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.delegate = self
+        picker.isEditing = true
+        picker.allowsEditing = true
+        viewController?.present(picker, animated: true, completion: nil)
+    }
+    
+    // MARK: - Multiple Images (iOS14+)
+    private func pickMultiFromGallery() {
+        if #available(iOS 14, *) {
+            var config = PHPickerConfiguration()
+            config.filter = .images
+            config.selectionLimit = multiImageLimit // system enforces limit
+            let picker = PHPickerViewController(configuration: config)
+            picker.delegate = self
+            viewController?.present(picker, animated: true, completion: nil)
+        } else {
+            // Fallback: older iOS doesn’t support multi selection
+            pickSingleFromGallery()
+        }
+    }
+    
+    // MARK: - Record Video
+    private func recordVideo() {
+        guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+            flutterResult?(nil)
+            return
+        }
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.mediaTypes = ["public.movie"]
+        picker.videoQuality = .typeMedium
+        picker.delegate = self
+        picker.isEditing = true
+        picker.allowsEditing = true
+        viewController?.present(picker, animated: true, completion: nil)
+    }
+    
+    // MARK: - UIImagePickerController Delegate
+    public func imagePickerController(_ picker: UIImagePickerController,
+                                      didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+        picker.dismiss(animated: true, completion: nil)
+        if let image = info[.originalImage] as? UIImage {
+            if let data = image.jpegData(compressionQuality: 1.0) {
+                flutterResult?(data)
+            } else {
+                flutterResult?(nil)
+            }
+        } else if let videoURL = info[.mediaURL] as? URL {
+            flutterResult?(videoURL.path)
+        } else {
+            flutterResult?(nil)
+        }
+    }
+    
+    public func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+        picker.dismiss(animated: true, completion: nil)
+        flutterResult?(nil)
+    }
+    
+    // MARK: - PHPicker Delegate
+    @available(iOS 14, *)
+    public func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+        picker.dismiss(animated: true, completion: nil)
+        
+        if results.isEmpty {
+            flutterResult?(nil)
+            return
+        }
+        
+        var imagesData: [FlutterStandardTypedData] = []
+        let group = DispatchGroup()
+        
+        for item in results.prefix(multiImageLimit) {
+            if item.itemProvider.canLoadObject(ofClass: UIImage.self) {
+                group.enter()
+                item.itemProvider.loadObject(ofClass: UIImage.self) { (reading, error) in
+                    if let image = reading as? UIImage,
+                       let data = image.jpegData(compressionQuality: 1.0) {
+                        imagesData.append(FlutterStandardTypedData(bytes: data))
+                    }
+                    group.leave()
+                }
+            }
+        }
+        
+        group.notify(queue: .main) {
+            self.flutterResult?(imagesData)
+        }
+    }
 }

@@ -26,7 +26,7 @@ class _MyAppState extends State<MyApp> {
   @override
   void initState() {
     super.initState();
-    initPlatformState();
+    // initPlatformState();
   }
 
   // Platform messages are asynchronous, so we initialize in an async method.
@@ -79,7 +79,7 @@ class _PickerDemoState extends State<PickerDemo> {
   }
 
   Future<void> _pickMulti() async {
-    final images = await FlutterImagePicker.pickMultiFromGallery(limit: 8);
+    final images = await FlutterImagePicker.pickMultiFromGallery(limit: 0);
     setState(() => _images = images);
   }
 
