@@ -1,7 +1,9 @@
 name: image_picker_bundle
-description: "A new Flutter project."
+description: "A Flutter plugin for picking images and videos from the device's gallery and camera."
 version: 0.0.1
-homepage:
+homepage: https://github.com/Gourav-sharma/image_picker_bundle
+repository: https://github.com/Gourav-sharma/image_picker_bundle
+issue_tracker: https://github.com/Gourav-sharma/image_picker_bundle/issues
 
 environment:
   sdk: ^3.8.1
