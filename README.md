@@ -1,6 +1,6 @@
 # image_picker_bundle
 
-A new Flutter project.
+A Flutter plugin for picking images and videos from the gallery and recording videos from the camera.
 
 ## Getting Started
 
