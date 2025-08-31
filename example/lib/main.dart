@@ -1,12 +1,9 @@
-import 'dart:io';
-
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'dart:async';
-
 import 'package:flutter/services.dart';
 import 'package:image_picker_bundle/image_picker_bundle.dart';
 import 'package:video_player/video_player.dart';
-
+import 'package:permission_handler/permission_handler.dart';
 
 void main() {
   runApp(const MyApp());
@@ -20,49 +17,19 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  String _platformVersion = 'Unknown';
   final _imagePickerBundlePlugin = ImagePickerBundle();
-
-  @override
-  void initState() {
-    super.initState();
-    // initPlatformState();
-  }
-
-  // Platform messages are asynchronous, so we initialize in an async method.
-  Future<void> initPlatformState() async {
-    String platformVersion;
-    // Platform messages may fail, so we use a try/catch PlatformException.
-    // We also handle the message potentially returning null.
-    try {
-      platformVersion =
-          await _imagePickerBundlePlugin.getPlatformVersion() ?? 'Unknown platform version';
-    } on PlatformException {
-      platformVersion = 'Failed to get platform version.';
-    }
-
-    // If the widget was removed from the tree while the asynchronous platform
-    // message was in flight, we want to discard the reply rather than calling
-    // setState to update our non-existent appearance.
-    if (!mounted) return;
-
-    setState(() {
-      _platformVersion = platformVersion;
-    });
-  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       home: Scaffold(
-        appBar: AppBar(
-          title: const Text('Plugin example app'),
-        ),
         body: PickerDemo(),
       ),
     );
   }
-}class PickerDemo extends StatefulWidget {
+}
+
+class PickerDemo extends StatefulWidget {
   @override
   _PickerDemoState createState() => _PickerDemoState();
 }
@@ -73,24 +40,30 @@ class _PickerDemoState extends State<PickerDemo> {
   String? _video;
   VideoPlayerController? _videoController;
 
+  /// Check and request permission
+  Future<bool> _requestPermission(Permission permission) async {
+    final status = await permission.request();
+    return status.isGranted;
+  }
+
   Future<void> _pickSingle() async {
     final image = await FlutterImagePicker.pickFromGallery();
-    setState(() => _image = image);
+    if (mounted) setState(() => _image = image);
   }
 
   Future<void> _pickMulti() async {
-    final images = await FlutterImagePicker.pickMultiFromGallery(limit: 0);
-    setState(() => _images = images);
+    final images = await FlutterImagePicker.pickMultiFromGallery(limit: 5);
+    if (mounted) setState(() => _images = images);
   }
 
   Future<void> _pickCameraImage() async {
+    if (!await _requestPermission(Permission.camera)) return;
     final image = await FlutterImagePicker.pickFromCamera();
-    setState(() => _image = image);
+    if (mounted) setState(() => _image = image);
   }
 
-
-
   Future<void> _recordVideo() async {
+    if (!await _requestPermission(Permission.camera)) return;
     final video = await FlutterImagePicker.recordVideo();
     await _playVideo(video);
   }
@@ -103,11 +76,20 @@ class _PickerDemoState extends State<PickerDemo> {
   Future<void> _playVideo(String? video) async {
     if (video != null) {
       _video = video;
+
+      // Dispose old controller before creating new one
+      _videoController?.dispose();
+
       final uri = Uri.parse(_video!);
       _videoController = VideoPlayerController.contentUri(uri);
-      await _videoController!.initialize();
-      setState(() {});
-      _videoController!.play();
+
+      try {
+        await _videoController!.initialize();
+        if (mounted) setState(() {});
+        _videoController!.play();
+      } catch (e) {
+        debugPrint("Video init error: $e");
+      }
     }
   }
 
@@ -154,17 +136,15 @@ class _PickerDemoState extends State<PickerDemo> {
             onPressed: _pickCameraImage,
             child: const Icon(Icons.camera_alt),
           ),
-
           FloatingActionButton(
             heroTag: "recordVideo",
             onPressed: _recordVideo,
             child: const Icon(Icons.videocam),
           ),
-
           FloatingActionButton(
             heroTag: "pickVideoFromGallery",
             onPressed: _pickVideoFromGallery,
-            child: const Icon(Icons.videocam),
+            child: const Icon(Icons.video_collection_outlined),
           ),
         ],
       ),

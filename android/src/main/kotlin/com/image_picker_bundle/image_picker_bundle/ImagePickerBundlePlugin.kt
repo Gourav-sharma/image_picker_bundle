@@ -1,11 +1,16 @@
 package com.image_picker_bundle.image_picker_bundle
 
+import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
@@ -14,9 +19,7 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
 import java.io.File
-import android.os.Build
 import android.graphics.Bitmap
-
 
 /** ImagePickerBundlePlugin */
 class ImagePickerBundlePlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware {
@@ -29,10 +32,11 @@ class ImagePickerBundlePlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
   private val REQUEST_GALLERY_MULTI = 1003
   private val REQUEST_GALLERY_VIDEO = 1004
   private val REQUEST_CAMERA_VIDEO = 1005
+  private val REQUEST_CAMERA_PERMISSION = 1100
 
   private var multiImageLimit: Int = 5
-
   private var cameraImageUri: Uri? = null
+  private var pendingCameraAction: (() -> Unit)? = null
 
   override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
     channel = MethodChannel(flutterPluginBinding.binaryMessenger, "image_picker_bundle")
@@ -50,13 +54,17 @@ class ImagePickerBundlePlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
         multiImageLimit = (call.argument<Int>("limit") ?: 5)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-          val intent = Intent(MediaStore.ACTION_PICK_IMAGES)
-          intent.putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, multiImageLimit)
+          val intent = Intent(MediaStore.ACTION_PICK_IMAGES).apply {
+            type = "image/*"
+            putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, multiImageLimit)
+          }
           activity?.startActivityForResult(intent, REQUEST_GALLERY_MULTI)
         } else {
-          val intent = Intent(Intent.ACTION_GET_CONTENT)
-          intent.type = "image/*"
-          intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+          val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+            type = "image/*"
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/jpeg", "image/png", "image/jpg", "image/webp"))
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+          }
           activity?.startActivityForResult(intent, REQUEST_GALLERY_MULTI)
         }
       }
@@ -69,23 +77,59 @@ class ImagePickerBundlePlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
         activity?.startActivityForResult(intent, REQUEST_CAMERA_VIDEO)
       }
       "pickFromCamera" -> {
-        val imageFile = createImageFile()
-        cameraImageUri = FileProvider.getUriForFile(
-          activity!!,
-          "${activity!!.packageName}.fileprovider",
-          imageFile
-        )
-        val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-        intent.putExtra(MediaStore.EXTRA_OUTPUT, cameraImageUri)
-        intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-        activity?.startActivityForResult(intent, REQUEST_CAMERA_IMAGE)
+        checkAndRequestCameraPermission {
+          startCameraIntent()
+        }
       }
       else -> result.notImplemented()
     }
   }
 
+  /** ✅ Camera permission check */
+  private fun checkAndRequestCameraPermission(onGranted: () -> Unit) {
+    val act = activity ?: return
+    if (ContextCompat.checkSelfPermission(act, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+      onGranted()
+    } else {
+      pendingCameraAction = onGranted
+      ActivityCompat.requestPermissions(act, arrayOf(Manifest.permission.CAMERA), REQUEST_CAMERA_PERMISSION)
+    }
+  }
+
+  /** ✅ Callback for permission */
+  fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray): Boolean {
+    if (requestCode == REQUEST_CAMERA_PERMISSION) {
+      if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+        pendingCameraAction?.invoke()
+      } else {
+        resultPending?.error("PERMISSION_DENIED", "Camera permission denied", null)
+        resultPending = null
+      }
+      pendingCameraAction = null
+      return true
+    }
+    return false
+  }
+
+  /** ✅ Start camera intent */
+  private fun startCameraIntent() {
+    val act = activity ?: return
+    val imageFile = createImageFile()
+    cameraImageUri = FileProvider.getUriForFile(
+      act,
+      "${act.packageName}.fileprovider",
+      imageFile
+    )
+    val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+      putExtra(MediaStore.EXTRA_OUTPUT, cameraImageUri)
+      addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+    }
+    act.startActivityForResult(intent, REQUEST_CAMERA_IMAGE)
+  }
+
   override fun onAttachedToActivity(binding: ActivityPluginBinding) {
     activity = binding.activity
+
     binding.addActivityResultListener { requestCode, resultCode, data ->
       if (resultCode == Activity.RESULT_OK) {
         when (requestCode) {
@@ -96,6 +140,7 @@ class ImagePickerBundlePlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
               sendBitmap(bitmap)
             } else {
               resultPending?.success(null)
+              resultPending = null
             }
             true
           }
@@ -103,24 +148,26 @@ class ImagePickerBundlePlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
             val clipData = data?.clipData
             val images = ArrayList<ByteArray>()
 
-            if (clipData != null) {
-              val count = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                clipData.itemCount // system already enforces limit
-              } else {
-                minOf(clipData.itemCount, multiImageLimit) // trim manually
-              }
+            fun isImageUri(uri: Uri): Boolean {
+              val type = activity!!.contentResolver.getType(uri)
+              return type?.startsWith("image/") == true
+            }
 
+            if (clipData != null) {
+              val count = minOf(clipData.itemCount, multiImageLimit)
               for (i in 0 until count) {
                 val uri = clipData.getItemAt(i).uri
-                val bitmap = MediaStore.Images.Media.getBitmap(activity!!.contentResolver, uri)
-                val stream = ByteArrayOutputStream()
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream)
-                images.add(stream.toByteArray())
+                if (isImageUri(uri)) {
+                  val bitmap = MediaStore.Images.Media.getBitmap(activity!!.contentResolver, uri)
+                  val stream = ByteArrayOutputStream()
+                  bitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream)
+                  images.add(stream.toByteArray())
+                }
               }
               resultPending?.success(images)
             } else {
               val uri = data?.data
-              if (uri != null) {
+              if (uri != null && isImageUri(uri)) {
                 val bitmap = MediaStore.Images.Media.getBitmap(activity!!.contentResolver, uri)
                 val stream = ByteArrayOutputStream()
                 bitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream)
@@ -129,11 +176,13 @@ class ImagePickerBundlePlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
                 resultPending?.success(null)
               }
             }
+            resultPending = null
             true
           }
           REQUEST_GALLERY_VIDEO, REQUEST_CAMERA_VIDEO -> {
             val uri = data?.data
             resultPending?.success(uri?.toString())
+            resultPending = null
             true
           }
           REQUEST_CAMERA_IMAGE -> {
@@ -143,6 +192,7 @@ class ImagePickerBundlePlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
               sendBitmap(bitmap)
             } else {
               resultPending?.success(null)
+              resultPending = null
             }
             true
           }
@@ -150,25 +200,26 @@ class ImagePickerBundlePlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
         }
       } else {
         resultPending?.success(null)
+        resultPending = null
         false
       }
     }
+
+    binding.addRequestPermissionsResultListener { requestCode, permissions, grantResults ->
+      onRequestPermissionsResult(requestCode, permissions, grantResults)
+    }
   }
 
-  private fun sendBitmap(bitmap: android.graphics.Bitmap) {
+  private fun sendBitmap(bitmap: Bitmap) {
     val stream = ByteArrayOutputStream()
-    bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 100, stream)
+    bitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream)
     resultPending?.success(stream.toByteArray())
     resultPending = null
   }
 
   private fun createImageFile(): File {
     val storageDir = activity!!.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
-    return File.createTempFile(
-      "IMG_${System.currentTimeMillis()}_",
-      ".jpg",
-      storageDir
-    )
+    return File.createTempFile("IMG_${System.currentTimeMillis()}_", ".jpg", storageDir)
   }
 
   override fun onDetachedFromActivityForConfigChanges() {}
