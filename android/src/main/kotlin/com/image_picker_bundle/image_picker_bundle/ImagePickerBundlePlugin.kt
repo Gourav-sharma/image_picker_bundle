@@ -33,6 +33,7 @@ class ImagePickerBundlePlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
 
   private var multiImageLimit: Int = 5
   private var cameraImageUri: Uri? = null
+  private var cameraImageFile: File? = null  // ✅ Hold real file reference
   private var pendingCameraAction: (() -> Unit)? = null
 
   override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
@@ -111,11 +112,11 @@ class ImagePickerBundlePlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
   /** ✅ Start camera intent */
   private fun startCameraIntent() {
     val act = activity ?: return
-    val imageFile = createImageFile()
+    cameraImageFile = createImageFile()
     cameraImageUri = FileProvider.getUriForFile(
       act,
       "${act.packageName}.fileprovider",
-      imageFile
+      cameraImageFile!!
     )
     val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
       putExtra(MediaStore.EXTRA_OUTPUT, cameraImageUri)
@@ -171,13 +172,18 @@ class ImagePickerBundlePlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
           }
           REQUEST_GALLERY_VIDEO, REQUEST_CAMERA_VIDEO -> {
             val uri = data?.data
-            resultPending?.success(uri?.path)
+            if (uri != null) {
+              val path = getPathFromUri(uri) // ✅ copy video to cache
+              resultPending?.success(path)
+            } else {
+              resultPending?.success(null)
+            }
             resultPending = null
             true
           }
           REQUEST_CAMERA_IMAGE -> {
-            if (cameraImageUri != null) {
-              resultPending?.success(cameraImageUri?.path)
+            if (cameraImageFile != null && cameraImageFile!!.exists()) {
+              resultPending?.success(cameraImageFile!!.absolutePath) // ✅ return real file path
             } else {
               resultPending?.success(null)
             }
@@ -198,12 +204,12 @@ class ImagePickerBundlePlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
     }
   }
 
-  /** ✅ Convert URI to file path */
+  /** ✅ Convert URI to file path by copying into cache */
   private fun getPathFromUri(uri: Uri): String? {
     val act = activity ?: return null
     return try {
       val inputStream = act.contentResolver.openInputStream(uri) ?: return null
-      val file = createTempFile("picked_", ".jpg", act.cacheDir)
+      val file = createTempFile("picked_", ".tmp", act.cacheDir)
       file.outputStream().use { output ->
         inputStream.copyTo(output)
       }

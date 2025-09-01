@@ -35,8 +35,8 @@ class PickerDemo extends StatefulWidget {
 }
 
 class _PickerDemoState extends State<PickerDemo> {
-  Uint8List? _image;
-  List<Uint8List>? _images;
+  File? _image;
+  List<File>? _images;
   String? _video;
   VideoPlayerController? _videoController;
 
@@ -65,12 +65,12 @@ class _PickerDemoState extends State<PickerDemo> {
   Future<void> _recordVideo() async {
     if (!await _requestPermission(Permission.camera)) return;
     final video = await FlutterImagePicker.recordVideo();
-    await _playVideo(video);
+    await _playVideo(video?.path);
   }
 
   Future<void> _pickVideoFromGallery() async {
     final video = await FlutterImagePicker.pickVideoFromGallery();
-    await _playVideo(video);
+    await _playVideo(video?.path);
   }
 
   Future<void> _playVideo(String? video) async {
@@ -104,7 +104,7 @@ class _PickerDemoState extends State<PickerDemo> {
             ? ListView.builder(
           itemCount: _images!.length,
           itemBuilder: (context, index) =>
-              Image.memory(_images![index]),
+              Image.file(_images![index]),
         )
             : _video != null &&
             _videoController != null &&
@@ -114,7 +114,7 @@ class _PickerDemoState extends State<PickerDemo> {
           child: VideoPlayer(_videoController!),
         )
             : _image != null
-            ? Image.memory(_image!)
+            ? Image.file(_image!)
             : const Text("No media selected"),
       ),
       floatingActionButton: Wrap(
@@ -163,38 +163,24 @@ class _PickerDemoState extends State<PickerDemo> {
 
 ### Android
 
-Add the following permissions to your AndroidManifest.xml file:
-
-```xml
-<uses-permission android:name="android.permission.CAMERA" />
-<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-
-<uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-<uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
-
-
-<provider
-android:name="androidx.core.content.FileProvider"
-android:authorities="${applicationId}.fileprovider"
-android:exported="false"
-android:grantUriPermissions="true">
-<meta-data
-    android:name="android.support.FILE_PROVIDER_PATHS"
-    android:resource="@xml/file_paths" />
-</provider>
-```
+No need to add permissions to your AndroidManifest.xml file:
 
 ### iOS
 Add the following permissions to your Info.plist file:
 
 ```info.plist
-<key>NSPhotoLibraryUsageDescription</key>
-<string>We need access to your photo library to pick images.</string>
 <key>NSCameraUsageDescription</key>
-<string>We need access to your camera to take photos.</string>
+<string>App requires camera access to take photos and videos.</string>
+
+<key>NSPhotoLibraryUsageDescription</key>
+<string>App requires access to your photo library.</string>
+
+<key>NSPhotoLibraryAddUsageDescription</key>
+<string>App requires access to save selected photos.</string>
+
+<!-- optional -->
 <key>NSMicrophoneUsageDescription</key>
-<string>We need access to your microphone to record videos.</string>
+<string>App requires microphone access to record videos with audio.</string>
 ```
 
 

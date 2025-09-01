@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker_bundle/image_picker_bundle.dart';
 import 'package:video_player/video_player.dart';
@@ -16,7 +15,6 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -35,7 +33,7 @@ class PickerDemo extends StatefulWidget {
 class _PickerDemoState extends State<PickerDemo> {
   File? _image;
   List<File>? _images;
-  String? _video;
+  File? _videoFile;
   VideoPlayerController? _videoController;
 
   /// Check and request permission
@@ -62,24 +60,22 @@ class _PickerDemoState extends State<PickerDemo> {
 
   Future<void> _recordVideo() async {
     if (!await _requestPermission(Permission.camera)) return;
-    final video = await FlutterImagePicker.recordVideo();
-    await _playVideo(video?.path);
+    final videoFile = await FlutterImagePicker.recordVideo();
+    await _playVideo(videoFile);
   }
 
   Future<void> _pickVideoFromGallery() async {
-    final video = await FlutterImagePicker.pickVideoFromGallery();
-    await _playVideo(video?.path);
+    final videoFile = await FlutterImagePicker.pickVideoFromGallery();
+    await _playVideo(videoFile);
   }
 
-  Future<void> _playVideo(String? video) async {
-    if (video != null) {
-      _video = video;
+  Future<void> _playVideo(File? videoFile) async {
+    if (videoFile != null) {
+      _videoFile = videoFile;
 
       // Dispose old controller before creating new one
       _videoController?.dispose();
-
-      final uri = Uri.parse(_video!);
-      _videoController = VideoPlayerController.contentUri(uri);
+      _videoController = VideoPlayerController.file(_videoFile!);
 
       try {
         await _videoController!.initialize();
@@ -96,15 +92,14 @@ class _PickerDemoState extends State<PickerDemo> {
     return Scaffold(
       appBar: AppBar(title: const Text("Flutter Image Picker Plugin")),
       body: Center(
-        child: _image == null && _images == null && _video == null
+        child: _image == null && _images == null && _videoFile == null
             ? const Text("No media selected")
             : _images != null
             ? ListView.builder(
           itemCount: _images!.length,
-          itemBuilder: (context, index) =>
-              Image.file(_images![index]),
+          itemBuilder: (context, index) => Image.file(_images![index]),
         )
-            : _video != null &&
+            : _videoFile != null &&
             _videoController != null &&
             _videoController!.value.isInitialized
             ? AspectRatio(
