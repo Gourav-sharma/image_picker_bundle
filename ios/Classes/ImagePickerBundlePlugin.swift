@@ -31,23 +31,21 @@ public class ImagePickerBundlePlugin: NSObject, FlutterPlugin, UIImagePickerCont
         case "recordVideo":
             recordVideo()
         case "pickVideoFromGallery":
-             pickVideoFromGallery()
+            pickVideoFromGallery()
         default:
             result(FlutterMethodNotImplemented)
         }
     }
-    
+
     // MARK: - Single Image from Gallery
     private func pickSingleFromGallery() {
         let picker = UIImagePickerController()
         picker.sourceType = .photoLibrary
         picker.delegate = self
-        picker.isEditing = true
-        picker.allowsEditing = true
-
+        picker.allowsEditing = false
         viewController?.present(picker, animated: true, completion: nil)
     }
-    
+
     // MARK: - Camera
     private func pickFromCamera() {
         guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
@@ -57,26 +55,24 @@ public class ImagePickerBundlePlugin: NSObject, FlutterPlugin, UIImagePickerCont
         let picker = UIImagePickerController()
         picker.sourceType = .camera
         picker.delegate = self
-        picker.isEditing = true
-        picker.allowsEditing = true
+        picker.allowsEditing = false
         viewController?.present(picker, animated: true, completion: nil)
     }
-    
+
     // MARK: - Multiple Images (iOS14+)
     private func pickMultiFromGallery() {
         if #available(iOS 14, *) {
             var config = PHPickerConfiguration()
             config.filter = .images
-            config.selectionLimit = multiImageLimit // system enforces limit
+            config.selectionLimit = multiImageLimit
             let picker = PHPickerViewController(configuration: config)
             picker.delegate = self
             viewController?.present(picker, animated: true, completion: nil)
         } else {
-            // Fallback: older iOS doesn’t support multi selection
             pickSingleFromGallery()
         }
     }
-    
+
     // MARK: - Record Video
     private func recordVideo() {
         guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
@@ -88,20 +84,16 @@ public class ImagePickerBundlePlugin: NSObject, FlutterPlugin, UIImagePickerCont
         picker.mediaTypes = ["public.movie"]
         picker.videoQuality = .typeHigh
         picker.delegate = self
-        picker.isEditing = true
-        picker.allowsEditing = true
         viewController?.present(picker, animated: true, completion: nil)
     }
+
     // MARK: - Pick Video from Gallery
     private func pickVideoFromGallery() {
         let picker = UIImagePickerController()
         picker.sourceType = .photoLibrary
-        picker.mediaTypes = ["public.movie"] // only videos
-        picker.delegate = self
+        picker.mediaTypes = ["public.movie"]
         picker.videoQuality = .typeHigh
         picker.delegate = self
-        picker.isEditing = true
-        picker.allowsEditing = true
         viewController?.present(picker, animated: true, completion: nil)
     }
 
@@ -109,9 +101,10 @@ public class ImagePickerBundlePlugin: NSObject, FlutterPlugin, UIImagePickerCont
     public func imagePickerController(_ picker: UIImagePickerController,
                                       didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
         picker.dismiss(animated: true, completion: nil)
+
         if let image = info[.originalImage] as? UIImage {
-            if let data = image.jpegData(compressionQuality: 1.0) {
-                flutterResult?(data)
+            if let path = saveImageToTemp(image) {
+                flutterResult?(path)
             } else {
                 flutterResult?(nil)
             }
@@ -121,40 +114,55 @@ public class ImagePickerBundlePlugin: NSObject, FlutterPlugin, UIImagePickerCont
             flutterResult?(nil)
         }
     }
-    
+
     public func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
         picker.dismiss(animated: true, completion: nil)
         flutterResult?(nil)
     }
-    
-    // MARK: - PHPicker Delegate
+
+    // MARK: - PHPicker Delegate (iOS 14+)
     @available(iOS 14, *)
     public func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
         picker.dismiss(animated: true, completion: nil)
-        
+
         if results.isEmpty {
             flutterResult?(nil)
             return
         }
-        
-        var imagesData: [FlutterStandardTypedData] = []
+
+        var filePaths: [String] = []
         let group = DispatchGroup()
-        
+
         for item in results.prefix(multiImageLimit) {
             if item.itemProvider.canLoadObject(ofClass: UIImage.self) {
                 group.enter()
                 item.itemProvider.loadObject(ofClass: UIImage.self) { (reading, error) in
                     if let image = reading as? UIImage,
-                       let data = image.jpegData(compressionQuality: 1.0) {
-                        imagesData.append(FlutterStandardTypedData(bytes: data))
+                       let path = self.saveImageToTemp(image) {
+                        filePaths.append(path)
                     }
                     group.leave()
                 }
             }
         }
-        
+
         group.notify(queue: .main) {
-            self.flutterResult?(imagesData)
+            self.flutterResult?(filePaths)
+        }
+    }
+
+    // MARK: - Save image to temp dir and return file path
+    private func saveImageToTemp(_ image: UIImage) -> String? {
+        guard let data = image.jpegData(compressionQuality: 1.0) else { return nil }
+        let tempDir = NSTemporaryDirectory()
+        let fileName = "IMG_\(Int(Date().timeIntervalSince1970)).jpg"
+        let filePath = (tempDir as NSString).appendingPathComponent(fileName)
+        do {
+            try data.write(to: URL(fileURLWithPath: filePath))
+            return filePath
+        } catch {
+            print("Error saving image: \(error)")
+            return nil
         }
     }
 }

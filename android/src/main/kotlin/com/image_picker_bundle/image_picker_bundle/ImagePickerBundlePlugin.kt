@@ -4,7 +4,6 @@ import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -17,9 +16,7 @@ import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
-import java.io.ByteArrayOutputStream
 import java.io.File
-import android.graphics.Bitmap
 
 /** ImagePickerBundlePlugin */
 class ImagePickerBundlePlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware {
@@ -136,17 +133,16 @@ class ImagePickerBundlePlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
           REQUEST_GALLERY_SINGLE -> {
             val uri = data?.data
             if (uri != null) {
-              val bitmap = MediaStore.Images.Media.getBitmap(activity!!.contentResolver, uri)
-              sendBitmap(bitmap)
+              resultPending?.success(getPathFromUri(uri))
             } else {
               resultPending?.success(null)
-              resultPending = null
             }
+            resultPending = null
             true
           }
           REQUEST_GALLERY_MULTI -> {
             val clipData = data?.clipData
-            val images = ArrayList<ByteArray>()
+            val paths = ArrayList<String>()
 
             fun isImageUri(uri: Uri): Boolean {
               val type = activity!!.contentResolver.getType(uri)
@@ -158,20 +154,14 @@ class ImagePickerBundlePlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
               for (i in 0 until count) {
                 val uri = clipData.getItemAt(i).uri
                 if (isImageUri(uri)) {
-                  val bitmap = MediaStore.Images.Media.getBitmap(activity!!.contentResolver, uri)
-                  val stream = ByteArrayOutputStream()
-                  bitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream)
-                  images.add(stream.toByteArray())
+                  getPathFromUri(uri)?.let { paths.add(it) }
                 }
               }
-              resultPending?.success(images)
+              resultPending?.success(paths)
             } else {
               val uri = data?.data
               if (uri != null && isImageUri(uri)) {
-                val bitmap = MediaStore.Images.Media.getBitmap(activity!!.contentResolver, uri)
-                val stream = ByteArrayOutputStream()
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream)
-                resultPending?.success(listOf(stream.toByteArray()))
+                resultPending?.success(listOf(getPathFromUri(uri)))
               } else {
                 resultPending?.success(null)
               }
@@ -181,19 +171,17 @@ class ImagePickerBundlePlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
           }
           REQUEST_GALLERY_VIDEO, REQUEST_CAMERA_VIDEO -> {
             val uri = data?.data
-            resultPending?.success(uri?.toString())
+            resultPending?.success(uri?.path)
             resultPending = null
             true
           }
           REQUEST_CAMERA_IMAGE -> {
             if (cameraImageUri != null) {
-              val stream = activity!!.contentResolver.openInputStream(cameraImageUri!!)
-              val bitmap = BitmapFactory.decodeStream(stream)
-              sendBitmap(bitmap)
+              resultPending?.success(cameraImageUri?.path)
             } else {
               resultPending?.success(null)
-              resultPending = null
             }
+            resultPending = null
             true
           }
           else -> false
@@ -210,11 +198,20 @@ class ImagePickerBundlePlugin : FlutterPlugin, MethodChannel.MethodCallHandler, 
     }
   }
 
-  private fun sendBitmap(bitmap: Bitmap) {
-    val stream = ByteArrayOutputStream()
-    bitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream)
-    resultPending?.success(stream.toByteArray())
-    resultPending = null
+  /** ✅ Convert URI to file path */
+  private fun getPathFromUri(uri: Uri): String? {
+    val act = activity ?: return null
+    return try {
+      val inputStream = act.contentResolver.openInputStream(uri) ?: return null
+      val file = createTempFile("picked_", ".jpg", act.cacheDir)
+      file.outputStream().use { output ->
+        inputStream.copyTo(output)
+      }
+      file.absolutePath
+    } catch (e: Exception) {
+      e.printStackTrace()
+      null
+    }
   }
 
   private fun createImageFile(): File {

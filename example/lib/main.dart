@@ -33,8 +33,8 @@ class PickerDemo extends StatefulWidget {
 }
 
 class _PickerDemoState extends State<PickerDemo> {
-  Uint8List? _image;
-  List<Uint8List>? _images;
+  File? _image;
+  List<File>? _images;
   String? _video;
   VideoPlayerController? _videoController;
 
@@ -63,12 +63,12 @@ class _PickerDemoState extends State<PickerDemo> {
   Future<void> _recordVideo() async {
     if (!await _requestPermission(Permission.camera)) return;
     final video = await FlutterImagePicker.recordVideo();
-    await _playVideo(video);
+    await _playVideo(video?.path);
   }
 
   Future<void> _pickVideoFromGallery() async {
     final video = await FlutterImagePicker.pickVideoFromGallery();
-    await _playVideo(video);
+    await _playVideo(video?.path);
   }
 
   Future<void> _playVideo(String? video) async {
@@ -102,7 +102,7 @@ class _PickerDemoState extends State<PickerDemo> {
             ? ListView.builder(
           itemCount: _images!.length,
           itemBuilder: (context, index) =>
-              Image.memory(_images![index]),
+              Image.file(_images![index]),
         )
             : _video != null &&
             _videoController != null &&
@@ -112,7 +112,7 @@ class _PickerDemoState extends State<PickerDemo> {
           child: VideoPlayer(_videoController!),
         )
             : _image != null
-            ? Image.memory(_image!)
+            ? Image.file(_image!)
             : const Text("No media selected"),
       ),
       floatingActionButton: Wrap(

@@ -7,6 +7,7 @@ export 'dart:typed_data';
 export 'package:flutter/services.dart';
 
 export 'features/flutter_image_picker.dart';
+export 'dart:io';
 
 
 class ImagePickerBundle {
